@@ -1,0 +1,8 @@
+/target/
+/.tools/
+/dist/
+/work/
+/artifacts/
+/assets/pdfium-win-x64.tgz
+/assets/include/*.orig
+*.pdb
