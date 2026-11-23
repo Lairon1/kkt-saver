@@ -14,6 +14,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     time::{Duration, Instant},
@@ -152,6 +153,7 @@ struct SaverApp {
     error: bool,
     settings_open: bool,
     tray: Option<TrayIcon>,
+    hidden_to_tray: Arc<AtomicBool>,
     native_window: Option<native_window::NativeWindow>,
     exiting: bool,
     printer: String,
@@ -203,10 +205,12 @@ fn dispatch_tray_action(
     tx: &Sender<Event>,
     ctx: &egui::Context,
     window: native_window::NativeWindow,
+    hidden_to_tray: &AtomicBool,
 ) {
     // Queue first: ShowWindow can deliver native messages synchronously. Restore
     // with Win32 before waiting for an egui frame: hidden HWNDs do not repaint.
     if tx.send(event).is_ok() {
+        hidden_to_tray.store(false, Ordering::Release);
         window.restore();
         ctx.request_repaint();
     }
@@ -215,6 +219,7 @@ fn build_tray(
     tx: Sender<Event>,
     ctx: egui::Context,
     window: native_window::NativeWindow,
+    hidden_to_tray: Arc<AtomicBool>,
 ) -> anyhow::Result<TrayIcon> {
     let menu = Menu::new();
     let open = MenuItem::new("Открыть карточки ККТ", true, None);
@@ -224,13 +229,15 @@ fn build_tray(
     let quit_id = quit.id().clone();
     let ctx1 = ctx.clone();
     let tx1 = tx.clone();
+    let hidden1 = hidden_to_tray.clone();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         if e.id == open_id {
-            dispatch_tray_action(Event::Show, &tx1, &ctx1, window);
+            dispatch_tray_action(Event::Show, &tx1, &ctx1, window, &hidden1);
         } else if e.id == quit_id {
-            dispatch_tray_action(Event::Quit, &tx1, &ctx1, window);
+            dispatch_tray_action(Event::Quit, &tx1, &ctx1, window, &hidden1);
         }
     }));
+    let hidden2 = hidden_to_tray;
     TrayIconEvent::set_event_handler(Some(move |e: TrayIconEvent| {
         if matches!(
             e,
@@ -243,7 +250,7 @@ fn build_tray(
                 ..
             }
         ) {
-            dispatch_tray_action(Event::Show, &tx, &ctx, window);
+            dispatch_tray_action(Event::Show, &tx, &ctx, window, &hidden2);
         }
     }));
     Ok(TrayIconBuilder::new()
@@ -260,24 +267,26 @@ impl SaverApp {
         let config = Config::load();
         let root_edit = config.root.display().to_string();
         let ctx = cc.egui_ctx.clone();
+        let hidden_to_tray = Arc::new(AtomicBool::new(false));
         let native = native_window::NativeWindow::from_context(cc);
         if let Ok(window) = native.as_ref() {
             window.dark_titlebar();
         }
         let native_window = native.as_ref().ok().copied();
-        let (tray, status, error) =
-            match native.and_then(|window| build_tray(tx.clone(), ctx.clone(), window)) {
-                Ok(t) => (
-                    Some(t),
-                    "Перетащите PDF-карточку в окно или нажмите «Открыть PDF».".into(),
-                    false,
-                ),
-                Err(e) => (
-                    None,
-                    format!("Трей недоступен: {e}. Закрытие окна завершит программу."),
-                    true,
-                ),
-            };
+        let (tray, status, error) = match native
+            .and_then(|window| build_tray(tx.clone(), ctx.clone(), window, hidden_to_tray.clone()))
+        {
+            Ok(t) => (
+                Some(t),
+                "Перетащите PDF-карточку в окно или нажмите «Открыть PDF».".into(),
+                false,
+            ),
+            Err(e) => (
+                None,
+                format!("Трей недоступен: {e}. Закрытие окна завершит программу."),
+                true,
+            ),
+        };
         let mut app = Self {
             config,
             root_edit,
@@ -319,6 +328,7 @@ impl SaverApp {
             error,
             settings_open: false,
             tray,
+            hidden_to_tray,
             native_window,
             exiting: false,
             printer: pdf::default_printer()
@@ -347,11 +357,14 @@ impl SaverApp {
     fn spawn(&self, name: &str, work: impl FnOnce(Sender<Event>) + Send + 'static) {
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
+        let hidden_to_tray = self.hidden_to_tray.clone();
         let _ = std::thread::Builder::new()
             .name(name.into())
             .spawn(move || {
                 work(tx);
-                ctx.request_repaint();
+                if !hidden_to_tray.load(Ordering::Acquire) {
+                    ctx.request_repaint();
+                }
             });
     }
     fn open(&mut self, path: PathBuf) {
@@ -452,6 +465,7 @@ impl SaverApp {
         let updates = self.index_updates.clone();
         let root = self.config.root.clone();
         let ctx = self.ctx.clone();
+        let hidden_to_tray = self.hidden_to_tray.clone();
         self.scanning = true;
         self.index_status = "Читаю индекс и проверяю архив…".into();
         match Indexer::start(root, data_dir(), move |update| {
@@ -460,7 +474,9 @@ impl SaverApp {
             if let Ok(mut pending) = updates.lock() {
                 pending.apply(update);
             }
-            ctx.request_repaint();
+            if !hidden_to_tray.load(Ordering::Acquire) {
+                ctx.request_repaint();
+            }
         }) {
             Ok(indexer) => self.indexer = Some(indexer),
             Err(e) => {
@@ -861,6 +877,7 @@ impl SaverApp {
                     }
                 }
                 Event::Show => {
+                    self.hidden_to_tray.store(false, Ordering::Release);
                     if let Some(window) = self.native_window {
                         window.restore();
                     }

@@ -1420,6 +1420,7 @@ impl eframe::App for SaverApp {
         self.process_events();
         if ctx.input(|i| i.viewport().close_requested()) && !self.exiting && self.tray.is_some() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.hidden_to_tray.store(true, Ordering::Release);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
         if !self.busy && !self.loading && self.new_folder.is_none() {
@@ -1462,13 +1463,17 @@ impl eframe::App for SaverApp {
         if self.query_due.is_some_and(|due| Instant::now() >= due) {
             self.search_now();
         }
-        ctx.request_repaint_after(
-            if self.busy || self.loading || self.scanning || self.searching {
-                Duration::from_millis(120)
-            } else {
-                Duration::from_millis(500)
-            },
-        );
+        // Do not keep rendering the whole UI while it is hidden in the tray.
+        // The tray callback requests a repaint after restoring the native window.
+        if !self.hidden_to_tray.load(Ordering::Acquire) {
+            ctx.request_repaint_after(
+                if self.busy || self.loading || self.scanning || self.searching {
+                    Duration::from_millis(120)
+                } else {
+                    Duration::from_millis(500)
+                },
+            );
+        }
         self.toolbar(ctx);
         self.status_bar(ctx);
         self.operations(ctx);

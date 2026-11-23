@@ -20,6 +20,7 @@ impl SaverApp {
         };
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
+        let hidden_to_tray = self.hidden_to_tray.clone();
         std::thread::spawn(move || {
             let mut steps = Vec::new();
             let wait_visible = |expected| -> anyhow::Result<()> {
@@ -45,7 +46,7 @@ impl SaverApp {
                     window.request_close();
                     wait_visible(false)?;
                     std::thread::sleep(Duration::from_millis(300));
-                    dispatch_tray_action(Event::Show, &tx, &ctx, window);
+                    dispatch_tray_action(Event::Show, &tx, &ctx, window, &hidden_to_tray);
                     wait_visible(true)?;
                     std::thread::sleep(Duration::from_millis(300));
                     anyhow::ensure!(window.visible(), "Window hid again after restoration");
@@ -64,7 +65,7 @@ impl SaverApp {
                 dir.join("tray-check.json"),
                 serde_json::to_vec_pretty(&report).unwrap(),
             );
-            dispatch_tray_action(Event::Quit, &tx, &ctx, window);
+            dispatch_tray_action(Event::Quit, &tx, &ctx, window, &hidden_to_tray);
         });
     }
 
