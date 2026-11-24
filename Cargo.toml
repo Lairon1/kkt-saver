@@ -1,6 +1,6 @@
 [package]
 name = "kkt-saver"
-version = "2.5.3"
+version = "2.5.4"
 edition = "2024"
 default-run = "kkt-saver"
 description = "Сохранение и печать карточек регистрации и снятия ККТ"
