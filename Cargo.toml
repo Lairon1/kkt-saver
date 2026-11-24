@@ -21,6 +21,10 @@ tempfile = "3.23"
 tray-icon = "0.21"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Graphics_Printing", "Win32_Storage_Xps", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 
+[patch.crates-io]
+# Backport the Windows event-loop wait fix; see vendor/eframe/LOCAL-PATCHES.md.
+eframe = { path = "vendor/eframe" }
+
 [profile.release]
 lto = "thin"
 strip = true

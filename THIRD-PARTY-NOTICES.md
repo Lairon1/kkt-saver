@@ -15,6 +15,11 @@ plus their transitive dependencies. Exact versions are fixed in Cargo.lock.
 The distribution includes Rust dependency license texts under `licenses/rust/`
 and an inventory in `licenses/RUST-DEPENDENCIES.txt`.
 
+eframe 0.33.3 is locally vendored under `vendor/eframe` with one Windows
+event-loop idle fix. The patch and its removal condition are documented in
+`vendor/eframe/LOCAL-PATCHES.md`. Its MIT and Apache-2.0 license texts are in
+`assets/licenses/rust/eframe-0.33.3/`.
+
 The application embeds the unmodified JetBrains Mono Regular font, version
 2.304, from the official JetBrains Mono project. Copyright 2020 The JetBrains
 Mono Project Authors. It is licensed under the SIL Open Font License 1.1,
