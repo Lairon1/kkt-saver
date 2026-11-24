@@ -21,6 +21,11 @@ impl SaverApp {
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
         let hidden_to_tray = self.hidden_to_tray.clone();
+        let hidden_hold = std::env::var("KKT_SAVER_TRAY_CHECK_HIDDEN_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|millis| Duration::from_millis(millis.min(120_000)))
+            .unwrap_or(Duration::from_millis(300));
         std::thread::spawn(move || {
             let mut steps = Vec::new();
             let wait_visible = |expected| -> anyhow::Result<()> {
@@ -45,7 +50,7 @@ impl SaverApp {
                 for cycle in 1..=3 {
                     window.request_close();
                     wait_visible(false)?;
-                    std::thread::sleep(Duration::from_millis(300));
+                    std::thread::sleep(hidden_hold);
                     dispatch_tray_action(Event::Show, &tx, &ctx, window, &hidden_to_tray);
                     wait_visible(true)?;
                     std::thread::sleep(Duration::from_millis(300));
